@@ -173,10 +173,8 @@ class MaalerDatabase:
         
         readings = cursor.fetchall()
         
-        cursor.close()
-        conn.close()
-        
-        return readings
+        # Konverter til liste af dictionaries med konsistent format
+        return [{'timestamp': r['timestamp'].strftime('%Y-%m-%d %H:%M:%S'), 'total_energy': r['total_energy']} for r in readings]
     
     def search_meters(self, search_term=''):
         conn = mysql.connector.connect(**self.db_config)
