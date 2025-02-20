@@ -47,9 +47,9 @@ def get_all_meters():
     meter_list = []
     for ip, name, mac in meters:
         meter_list.append({
-            'ip': ip,
-            'name': name,
-            'mac': mac
+            'ip': ip or '',
+            'name': name or '',
+            'mac': mac or ''  # Brug tom streng hvis mac er None
         })
     return jsonify(meter_list)
 
