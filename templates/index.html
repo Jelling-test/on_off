@@ -468,6 +468,9 @@
         function updatePlot(meterName) {
             if (!meterName) {
                 document.getElementById('deleteButton').style.display = 'none';
+                document.getElementById('latestReading').textContent = '-';
+                document.getElementById('latestTimestamp').textContent = '-';
+                document.getElementById('selectedMeterName').textContent = '';
                 return;
             }
             
@@ -480,20 +483,25 @@
                     }
 
                     // Opdater måler info uanset om der er målinger eller ej
-                    document.getElementById('selectedMeterName').textContent = data.meter_name;
+                    document.getElementById('selectedMeterName').textContent = data.meter_name || '';
                     document.getElementById('deleteButton').style.display = 'block';
                     
-                    if (data.latest) {
+                    // Håndter latest readings data sikkert
+                    if (data.latest && typeof data.latest.value === 'number') {
                         document.getElementById('latestReading').textContent = data.latest.value.toFixed(2).replace('.', ',');
-                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp;
+                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp || '-';
                     } else {
-                        document.getElementById('latestReading').textContent = 'Ingen målinger';
+                        document.getElementById('latestReading').textContent = '-';
                         document.getElementById('latestTimestamp').textContent = '-';
                     }
 
+                    // Sikre at vi har data arrays
+                    const dates = Array.isArray(data.dates) ? data.dates : [];
+                    const values = Array.isArray(data.values) ? data.values : [];
+
                     const trace = {
-                        x: data.dates,
-                        y: data.values,
+                        x: dates,
+                        y: values,
                         type: 'scatter',
                         mode: 'lines'
                     };
@@ -511,7 +519,11 @@
 
                     Plotly.newPlot('plot', [trace], layout);
                 })
-                .catch(error => console.error('Error:', error));
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('latestReading').textContent = '-';
+                    document.getElementById('latestTimestamp').textContent = '-';
+                });
         }
 
         function filterMeters() {

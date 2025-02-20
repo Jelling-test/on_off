@@ -117,7 +117,7 @@ def get_readings():
         return jsonify({'error': 'Ingen måler valgt'}), 400
         
     readings = db.get_readings(meter_name)
-    latest = db.get_latest_reading(meter_name)
+    latest_reading = db.get_latest_reading(meter_name)
     
     if not readings:
         # Hvis der ikke er nogen målinger, returner tomme arrays men inkluder måler navn
@@ -130,6 +130,14 @@ def get_readings():
     
     dates = [r[0] for r in readings]
     values = [r[1] for r in readings]
+    
+    # Formater latest data korrekt med value og timestamp felter
+    latest = None
+    if latest_reading and len(latest_reading) >= 2:
+        latest = {
+            'timestamp': latest_reading[0].strftime('%Y-%m-%d %H:%M:%S') if latest_reading[0] else None,
+            'value': float(latest_reading[1]) if latest_reading[1] is not None else None
+        }
     
     return jsonify({
         'dates': dates,
