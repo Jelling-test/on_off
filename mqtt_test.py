@@ -45,7 +45,8 @@ def get_meter_name(mac_address):
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor(dictionary=True)
         
-        cursor.execute('SELECT meter_name FROM meters WHERE mac_address = %s LIMIT 1', (mac_address,))
+        # Prøv først med den fulde MAC adresse
+        cursor.execute('SELECT meter_name FROM meters WHERE mac_address LIKE %s LIMIT 1', (f'%{mac_address}%',))
         result = cursor.fetchone()
         
         cursor.close()
@@ -95,22 +96,41 @@ def process_message_queue():
                 topic = msg.topic
                 payload = msg.payload.decode()
                 
+                # Log alle beskeder for at se hvad vi modtager
+                logging.debug(f"Topic: {topic}")
+                logging.debug(f"Payload: {payload}")
+                
                 try:
                     data = json.loads(payload)
                     
-                    # Konverter tid til korrekt format
-                    mqtt_time = datetime.strptime(data["Time"], "%Y-%m-%dT%H:%M:%S")
-                    current_time = mqtt_time.strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    # Udtræk MAC adresse fra topic
-                    mac_match = re.search(r'/([0-9A-Fa-f]{12})/', topic)
-                    if mac_match:
-                        mac_address = mac_match.group(1)
-                        meter_name = get_meter_name(mac_address) or mac_address
+                    # Tjek om det er en SENSOR besked med ENERGY data
+                    if "ENERGY" in data and "Time" in data and "ConsumptionTotal" in data["ENERGY"]:
+                        # Udled meter_id fra topic (f.eks. tele/obkBFBFD7F0 -> BFBFD7F0)
+                        meter_id = topic.split('/')[1]
+                        mac_address = meter_id[3:] if meter_id.startswith('obk') else meter_id
+                        meter_name = get_meter_name(mac_address)
                         
-                        # Gem måling i pending listen
-                        reading = (None, meter_name, float(data["TotalEnergy"]), current_time)
+                        if not meter_name:
+                            logging.error(f"Ingen måler fundet med MAC adresse: {mac_address}")
+                            continue
+                            
+                        # Konverter værdien til kWh
+                        raw_value = data["ENERGY"]["ConsumptionTotal"]
+                        kwh_value = float(raw_value)
+                        
+                        # Konverter tidspunkt
+                        mqtt_time = datetime.strptime(data["Time"], "%Y-%m-%dT%H:%M:%S")
+                        current_time = mqtt_time.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Gem måling i pending listen med None som ip_address
+                        reading = (None, meter_name, kwh_value, current_time)
                         pending_readings[meter_name].append(reading)
+                        
+                        # Log målingen
+                        energy_formatted = format(round(kwh_value, 2), '.2f').replace('.', ',')
+                        logging.info(f"Måling klar til gemning for {meter_name}:")
+                        logging.info(f"  Måler tidspunkt: {current_time}")
+                        logging.info(f"  Total energi: {energy_formatted} kWh")
                         
                 except json.JSONDecodeError:
                     logging.error(f"Ugyldig JSON i besked: {payload}")
@@ -155,9 +175,13 @@ def on_disconnect(client, userdata, rc):
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logging.info("Forbundet til MQTT broker!")
-        # Subscribe til alle målere
-        client.subscribe("myhome/energy/+/+/power")
-        client.subscribe("myhome/energy/+/+/energy")
+        # Subscribe til alle relevante topics for den specifikke måler
+        topics = [
+            f"tele/obk{mac_suffix}/SENSOR" for mac_suffix in ["BFBFD7F0", "84E237"]
+        ]
+        for topic in topics:
+            client.subscribe(topic)
+            logging.info(f"Lytter på topic: {topic}")
     else:
         logging.error(f"Forbindelse fejlede med kode {rc}")
 

@@ -5,8 +5,6 @@ import json
 import requests
 import logging
 import re
-import datetime
-import plotly.graph_objects as go
 
 # Set up logging
 logging.basicConfig(
@@ -49,9 +47,9 @@ def get_all_meters():
     meter_list = []
     for ip, name, mac in meters:
         meter_list.append({
-            'ip': ip or '',
-            'name': name or '',
-            'mac': mac or ''  # Brug tom streng hvis mac er None
+            'ip': ip,
+            'name': name,
+            'mac': mac
         })
     return jsonify(meter_list)
 
@@ -116,18 +114,28 @@ def search_meters():
 def get_readings():
     meter_name = request.args.get('meter_name')
     if not meter_name:
-        return jsonify({'error': 'No meter name provided'}), 400
+        return jsonify({'error': 'Ingen måler valgt'}), 400
         
     readings = db.get_readings(meter_name)
+    latest = db.get_latest_reading(meter_name)
+    
     if not readings:
-        return jsonify({'error': 'No readings found'}), 404
-        
-    dates = [r['timestamp'] for r in readings]
-    values = [r['total_energy'] for r in readings]
+        # Hvis der ikke er nogen målinger, returner tomme arrays men inkluder måler navn
+        return jsonify({
+            'dates': [],
+            'values': [],
+            'latest': None,
+            'meter_name': meter_name
+        })
+    
+    dates = [r[0] for r in readings]
+    values = [r[1] for r in readings]
     
     return jsonify({
         'dates': dates,
-        'values': values
+        'values': values,
+        'latest': latest,
+        'meter_name': meter_name
     })
 
 @app.route('/create_meter_group', methods=['POST'])
@@ -174,8 +182,8 @@ def graph_data(meter_name):
         return jsonify({'error': f'Ingen data fundet for måler "{meter_name}"'}), 404
     
     # Forbered data til plotly
-    dates = [r['timestamp'] for r in readings]
-    energy = [r['total_energy'] for r in readings]
+    dates = [r[0] for r in readings]
+    energy = [r[1] for r in readings]
     
     # Find seneste tidspunkt og energi
     latest_reading_time = max(dates) if dates else "Ingen data"
@@ -192,7 +200,7 @@ def graph_data(meter_name):
     fig.add_trace(go.Scatter(
         x=dates,
         y=energy,
-        mode='lines',
+        mode='lines',  # Brug lines i stedet for bars
         line=dict(
             color='rgb(49,130,189)',
             width=2
@@ -216,7 +224,7 @@ def graph_data(meter_name):
         margin=dict(l=50, r=50, t=100, b=50),
         paper_bgcolor='white',
         plot_bgcolor='white',
-        showlegend=False,
+        showlegend=False,  # Skjul legend da vi kun har én linje
         xaxis=dict(
             showgrid=True,
             gridcolor='lightgray',
@@ -226,8 +234,8 @@ def graph_data(meter_name):
             showgrid=True,
             gridcolor='lightgray',
             gridwidth=1,
-            rangemode='nonnegative',
-            range=[0, None]
+            rangemode='nonnegative',  # Forhindrer negative værdier
+            range=[0, None]  # Start ved 0, automatisk maksimum
         )
     )
     
@@ -243,24 +251,21 @@ def overview():
     for meter in meters:
         readings = db.get_readings(meter, days)
         if readings:
-            dates = [r['timestamp'] for r in readings]
-            energy = [r['total_energy'] for r in readings]
+            dates = [r[0] for r in readings]
+            energy = [r[1] for r in readings]
             fig.add_trace(go.Scatter(
                 x=dates,
                 y=energy,
                 mode='lines',
-                name=meter,
-                line=dict(width=2)
+                line=dict(
+                    color='rgb(49,130,189)',
+                    width=2
+                ),
+                name=meter
             ))
     
     fig.update_layout(
-        title={
-            'text': 'Energiforbrug - Alle Målere',
-            'y':0.95,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
+        title='Samlet Energiforbrug - Alle Målere',
         xaxis_title='Dato',
         yaxis_title='Total Energi (kWh)',
         width=1123,
@@ -278,8 +283,8 @@ def overview():
             showgrid=True,
             gridcolor='lightgray',
             gridwidth=1,
-            rangemode='nonnegative',
-            range=[0, None]
+            rangemode='nonnegative',  # Forhindrer negative værdier
+            range=[0, None]  # Start ved 0, automatisk maksimum
         )
     )
     
