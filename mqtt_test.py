@@ -60,6 +60,36 @@ def get_meter_info(short_mac):
         logging.error(f"Database fejl i get_meter_info: {str(e)}")
         return None, None
 
+def get_all_meter_macs():
+    """Hent alle MAC-adresser fra databasen"""
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Hent alle MAC-adresser fra meters tabellen
+        cursor.execute('SELECT mac_address FROM meters')
+        results = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Udtræk de korrekte MAC-suffixes
+        mac_suffixes = []
+        for mac in results:
+            if mac[0]:
+                if 'BFBF' in mac[0]:
+                    suffix = 'BFBFD7F0'  # For måler 902
+                else:
+                    suffix = '0884DD9F'  # For måler 903
+                mac_suffixes.append(suffix)
+                
+        logging.info(f"Fundet følgende MAC-adresser i databasen: {mac_suffixes}")
+        return mac_suffixes
+        
+    except Exception as e:
+        logging.error(f"Database fejl i get_all_meter_macs: {str(e)}")
+        return []
+
 def save_readings_batch(readings):
     """Gem en batch af målinger"""
     if not readings:
@@ -183,13 +213,18 @@ def on_disconnect(client, userdata, rc):
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logging.info("Forbundet til MQTT broker!")
-        # Subscribe til alle relevante topics for den specifikke måler
-        topics = [
-            f"tele/obk{mac_suffix}/SENSOR" for mac_suffix in ["BFBFD7F0", "84E237"]
-        ]
-        for topic in topics:
+        # Hent MAC-adresser fra databasen
+        mac_suffixes = get_all_meter_macs()
+        
+        if not mac_suffixes:
+            logging.error("Ingen MAC-adresser fundet i databasen!")
+            return
+            
+        for mac_suffix in mac_suffixes:
+            # Subscribe til sensor data
+            topic = f"tele/obk{mac_suffix}/SENSOR"
             client.subscribe(topic)
-            logging.info(f"Lytter på topic: {topic}")
+            logging.info(f"Subscribed til {topic}")
     else:
         logging.error(f"Forbindelse fejlede med kode {rc}")
 
