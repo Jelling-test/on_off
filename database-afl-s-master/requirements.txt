@@ -1,0 +1,4 @@
+flask==2.0.1
+paho-mqtt==1.6.1
+plotly==5.3.1
+schedule==1.1.0

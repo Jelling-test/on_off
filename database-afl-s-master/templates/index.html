@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Energimåler Dashboard</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button.danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .button.danger:hover {
+            background-color: #c82333;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+        }
+        .modal-confirm {
+            max-width: 400px;
+        }
+        .modal-confirm h2 {
+            color: #dc3545;
+        }
+        .modal-confirm .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: black;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .error {
+            color: #dc3545;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        .success {
+            color: green;
+            margin: 10px 0;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+        }
+        .top-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .search-box {
+            width: 50%;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .total-consumption {
+            width: 30%;
+            text-align: center;
+        }
+        .content-section {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .meter-section, .group-section {
+            flex: 1;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .meter-info {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .meter-actions {
+            margin: 10px 0;
+        }
+        .control-section {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .group-input {
+            display: flex;
+            gap: 10px;
+        }
+        .group-input select, .group-input input {
+            flex: 1;
+        }
+        .meter-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .meter-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .meter-item:hover {
+            background: #f0f0f0;
+        }
+        .meter-item.active {
+            background: #e0e0e0;
+            border-color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Energimåler Dashboard</h1>
+        
+        <!-- Søgefelt -->
+        <div class="top-section">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Søg efter måler..." onkeyup="filterMeters()">
+            </div>
+        </div>
+
+        <div class="control-section">
+            <button class="button" onclick="openAddMeterModal()">Tilføj Ny Måler</button>
+            <button class="button" onclick="openGroupModal()">Administrer Grupper</button>
+        </div>
+
+        <div class="content-section">
+            <div class="meter-section">
+                <h2>Installerede Målere</h2>
+                <div id="meterList"></div>
+            </div>
+            
+            <div class="group-section">
+                <h2>Målergrupper</h2>
+                <div id="groupList"></div>
+            </div>
+        </div>
+
+        <div class="meter-info">
+            <h2>Valgt Måler: <span id="selectedMeterName">Ingen valgt</span></h2>
+            <div class="meter-actions">
+                <button class="button danger" onclick="deleteMeter()" id="deleteButton" style="display: none;">Slet Måler</button>
+            </div>
+            <p>Seneste måling: <span id="latestReading">-</span> kWh</p>
+            <p>Tidspunkt: <span id="latestTimestamp">-</span></p>
+        </div>
+        
+        <div id="plot"></div>
+    </div>
+
+    <!-- Modal for adding new meter -->
+    <div id="addMeterModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeAddMeterModal()">&times;</span>
+            <h2>Tilføj Ny Måler</h2>
+            
+            <div class="tab">
+                <button class="tablinks active" onclick="openTab(event, 'ipTab')">Via IP Adresse</button>
+                <button class="tablinks" onclick="openTab(event, 'macTab')">Via MAC Adresse</button>
+            </div>
+
+            <div id="ipTab" class="tabcontent" style="display: block;">
+                <div class="input-group">
+                    <label for="ip_address">IP Adresse:</label>
+                    <input type="text" id="ip_address" name="ip_address" placeholder="f.eks. 192.168.1.100">
+                </div>
+                <div class="input-group">
+                    <label for="meter_name">Måler Navn:</label>
+                    <input type="text" id="meter_name" name="meter_name" placeholder="f.eks. Måler 501">
+                </div>
+                <div class="input-group">
+                    <label for="ip_group">Gruppe:</label>
+                    <div class="group-input">
+                        <select id="ip_group" name="ip_group">
+                            <option value="">Vælg gruppe...</option>
+                        </select>
+                        <input type="text" id="ip_new_group" name="ip_new_group" placeholder="Eller skriv ny gruppe navn" style="display: none;">
+                    </div>
+                </div>
+                <button class="button" onclick="addMeterViaIP()">Tilføj Måler</button>
+            </div>
+
+            <div id="macTab" class="tabcontent">
+                <div class="input-group">
+                    <label for="mac_address">MAC Adresse:</label>
+                    <input type="text" id="mac_address" name="mac_address" placeholder="f.eks. A09208084E237">
+                </div>
+                <div class="input-group">
+                    <label for="mac_meter_name">Måler Navn:</label>
+                    <input type="text" id="mac_meter_name" name="mac_meter_name" placeholder="f.eks. Måler 501">
+                </div>
+                <div class="input-group">
+                    <label for="mac_group">Gruppe:</label>
+                    <div class="group-input">
+                        <select id="mac_group" name="mac_group">
+                            <option value="">Vælg gruppe...</option>
+                        </select>
+                        <input type="text" id="mac_new_group" name="mac_new_group" placeholder="Eller skriv ny gruppe navn" style="display: none;">
+                    </div>
+                </div>
+                <button class="button" onclick="addMeterViaMAC()">Tilføj Måler</button>
+            </div>
+
+            <div id="addMeterError" class="error"></div>
+            <div id="addMeterSuccess" class="success"></div>
+        </div>
+    </div>
+
+    <!-- Modal for meter groups -->
+    <div id="groupModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeGroupModal()">&times;</span>
+            <h2>Administrer Målergrupper</h2>
+            
+            <div class="input-group">
+                <label for="group_name">Gruppe Navn:</label>
+                <input type="text" id="group_name" name="group_name" placeholder="f.eks. Bygning A">
+            </div>
+            
+            <div class="input-group">
+                <label>Vælg Målere:</label>
+                <div id="groupMeterList"></div>
+            </div>
+            
+            <button class="button" onclick="createGroup()">Opret Gruppe</button>
+            
+            <div id="groupError" class="error"></div>
+            <div id="groupSuccess" class="success"></div>
+        </div>
+    </div>
+
+    <!-- Modal for delete confirmation -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content modal-confirm">
+            <h2>Slet Måler</h2>
+            <p>Er du sikker på at du vil slette måleren "<span id="deleteModalMeterName"></span>"?</p>
+            <p>Dette vil også slette alle målerens målinger og fjerne den fra alle grupper.</p>
+            <div class="input-group">
+                <label for="deleteCode">Indtast sikkerhedskode:</label>
+                <input type="password" id="deleteCode" name="deleteCode" placeholder="Indtast kode">
+            </div>
+            <div id="deleteError" class="error"></div>
+            <div class="button-group">
+                <button class="button" onclick="closeDeleteModal()">Annuller</button>
+                <button class="button danger" onclick="confirmDelete()">Slet Måler</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        function openAddMeterModal() {
+            document.getElementById('addMeterModal').style.display = 'block';
+            updateGroupSelects();
+            
+            // Tilføj change event listeners til gruppe select
+            document.getElementById('ip_group').onchange = () => handleGroupSelect('ip');
+            document.getElementById('mac_group').onchange = () => handleGroupSelect('mac');
+        }
+
+        function closeAddMeterModal() {
+            document.getElementById('addMeterModal').style.display = 'none';
+            // Clear input fields
+            document.getElementById('ip_address').value = '';
+            document.getElementById('meter_name').value = '';
+            document.getElementById('mac_address').value = '';
+            document.getElementById('mac_meter_name').value = '';
+        }
+
+        function addMeterViaIP() {
+            const ipAddress = document.getElementById('ip_address').value;
+            const meterName = document.getElementById('meter_name').value;
+            const groupSelect = document.getElementById('ip_group');
+            const newGroupInput = document.getElementById('ip_new_group');
+            const groupName = groupSelect.value === 'new' ? newGroupInput.value : groupSelect.value;
+
+            if (!ipAddress || !meterName) {
+                document.getElementById('addMeterError').textContent = 'Udfyld venligst alle felter';
+                return;
+            }
+
+            if (!groupName) {
+                document.getElementById('addMeterError').textContent = 'Vælg eller opret en gruppe';
+                return;
+            }
+
+            fetch('/add_meter', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `ip_address=${encodeURIComponent(ipAddress)}&meter_name=${encodeURIComponent(meterName)}`
+            })
+            .then(response => response.json())
+            .then(async data => {
+                if (data.success) {
+                    try {
+                        await addMeterToGroup(meterName, groupName);
+                        document.getElementById('addMeterSuccess').textContent = 'Måler tilføjet og tilknyttet til gruppe!';
+                        updateMeterList();
+                        updateGroupList();
+                        setTimeout(closeAddMeterModal, 2000);
+                    } catch (error) {
+                        document.getElementById('addMeterError').textContent = error.message;
+                    }
+                } else {
+                    document.getElementById('addMeterError').textContent = data.error;
+                }
+            })
+            .catch(error => {
+                document.getElementById('addMeterError').textContent = 'Der skete en fejl: ' + error;
+            });
+        }
+
+        function addMeterViaMAC() {
+            const macAddress = document.getElementById('mac_address').value;
+            const meterName = document.getElementById('mac_meter_name').value;
+            const groupSelect = document.getElementById('mac_group');
+            const newGroupInput = document.getElementById('mac_new_group');
+            const groupName = groupSelect.value === 'new' ? newGroupInput.value : groupSelect.value;
+
+            if (!macAddress || !meterName) {
+                document.getElementById('addMeterError').textContent = 'Udfyld venligst alle felter';
+                return;
+            }
+
+            if (!groupName) {
+                document.getElementById('addMeterError').textContent = 'Vælg eller opret en gruppe';
+                return;
+            }
+
+            fetch('/add_meter_mac', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `mac_address=${encodeURIComponent(macAddress)}&meter_name=${encodeURIComponent(meterName)}`
+            })
+            .then(response => response.json())
+            .then(async data => {
+                if (data.success) {
+                    try {
+                        await addMeterToGroup(meterName, groupName);
+                        document.getElementById('addMeterSuccess').textContent = 'Måler tilføjet og tilknyttet til gruppe!';
+                        updateMeterList();
+                        updateGroupList();
+                        setTimeout(closeAddMeterModal, 2000);
+                    } catch (error) {
+                        document.getElementById('addMeterError').textContent = error.message;
+                    }
+                } else {
+                    document.getElementById('addMeterError').textContent = data.error;
+                }
+            })
+            .catch(error => {
+                document.getElementById('addMeterError').textContent = 'Der skete en fejl: ' + error;
+            });
+        }
+
+        function updatePlot(meterName) {
+            if (!meterName) {
+                document.getElementById('deleteButton').style.display = 'none';
+                return;
+            }
+            
+            fetch('/get_readings?meter_name=' + encodeURIComponent(meterName))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error(data.error);
+                        return;
+                    }
+
+                    // Opdater måler info uanset om der er målinger eller ej
+                    document.getElementById('selectedMeterName').textContent = data.meter_name;
+                    document.getElementById('deleteButton').style.display = 'block';
+                    
+                    if (data.latest) {
+                        document.getElementById('latestReading').textContent = data.latest.value.toFixed(2).replace('.', ',');
+                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp;
+                    } else {
+                        document.getElementById('latestReading').textContent = 'Ingen målinger';
+                        document.getElementById('latestTimestamp').textContent = '-';
+                    }
+
+                    const trace = {
+                        x: data.dates,
+                        y: data.values,
+                        type: 'scatter',
+                        mode: 'lines'
+                    };
+
+                    const layout = {
+                        title: 'Energiforbrug over tid',
+                        xaxis: {
+                            title: 'Tidspunkt'
+                        },
+                        yaxis: {
+                            title: 'kWh',
+                            rangemode: 'tozero'
+                        }
+                    };
+
+                    Plotly.newPlot('plot', [trace], layout);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function filterMeters() {
+            const searchInput = document.getElementById('searchInput').value.toLowerCase();
+            const meterList = document.getElementById('meterList');
+            const meters = meterList.getElementsByTagName('li');
+
+            for (let i = 0; i < meters.length; i++) {
+                const li = meters[i];
+                const meterText = li.textContent.toLowerCase();
+                if (meterText.includes(searchInput)) {
+                    li.style.display = '';
+                } else {
+                    li.style.display = 'none';
+                }
+            }
+        }
+
+        function updateMeterList() {
+            fetch('/get_all_meters')
+                .then(response => response.json())
+                .then(meters => {
+                    const meterList = document.getElementById('meterList');
+                    if (meters.length > 0) {
+                        const ul = document.createElement('ul');
+                        ul.className = 'meter-list';
+                        meters.forEach(meter => {
+                            const li = document.createElement('li');
+                            li.className = 'meter-item';
+                            li.textContent = `${meter.name} (${meter.ip || meter.mac})`;
+                            li.onclick = () => {
+                                // Fjern aktiv klasse fra alle målere
+                                const allMeters = ul.getElementsByClassName('meter-item');
+                                Array.from(allMeters).forEach(m => m.classList.remove('active'));
+                                
+                                // Tilføj aktiv klasse til den valgte måler
+                                li.classList.add('active');
+                                
+                                // Opdater plot og info
+                                updatePlot(meter.name);
+                            };
+                            ul.appendChild(li);
+                        });
+                        meterList.innerHTML = '';
+                        meterList.appendChild(ul);
+                    } else {
+                        meterList.innerHTML = '<p>Ingen målere installeret endnu.</p>';
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function updateGroupList() {
+            fetch('/get_meter_groups')
+                .then(response => response.json())
+                .then(groups => {
+                    const groupList = document.getElementById('groupList');
+                    if (groups.length > 0) {
+                        const ul = document.createElement('ul');
+                        groups.forEach(group => {
+                            const li = document.createElement('li');
+                            li.innerHTML = `<strong>${group.name}</strong><br>Målere: ${group.meters.join(', ')}`;
+                            ul.appendChild(li);
+                        });
+                        groupList.innerHTML = '';
+                        groupList.appendChild(ul);
+                    } else {
+                        groupList.innerHTML = '<p>Ingen grupper oprettet endnu.</p>';
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function openGroupModal() {
+            document.getElementById('groupModal').style.display = 'block';
+            // Opdater listen af målere der kan vælges
+            fetch('/get_all_meters')
+                .then(response => response.json())
+                .then(meters => {
+                    const meterList = document.getElementById('groupMeterList');
+                    meterList.innerHTML = '';
+                    meters.forEach(meter => {
+                        const div = document.createElement('div');
+                        div.innerHTML = `
+                            <input type="checkbox" id="meter_${meter.name}" value="${meter.name}">
+                            <label for="meter_${meter.name}">${meter.name}</label>
+                        `;
+                        meterList.appendChild(div);
+                    });
+                });
+        }
+
+        function closeGroupModal() {
+            document.getElementById('groupModal').style.display = 'none';
+            document.getElementById('group_name').value = '';
+            document.getElementById('groupError').textContent = '';
+            document.getElementById('groupSuccess').textContent = '';
+        }
+
+        function createGroup() {
+            const groupName = document.getElementById('group_name').value;
+            if (!groupName) {
+                document.getElementById('groupError').textContent = 'Gruppe navn skal udfyldes';
+                return;
+            }
+
+            // Først opret gruppen
+            fetch('/create_meter_group', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `group_name=${encodeURIComponent(groupName)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Tilføj valgte målere til gruppen
+                    const checkboxes = document.querySelectorAll('#groupMeterList input[type="checkbox"]:checked');
+                    const promises = Array.from(checkboxes).map(cb => 
+                        fetch('/add_meter_to_group', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: `group_name=${encodeURIComponent(groupName)}&meter_name=${encodeURIComponent(cb.value)}`
+                        })
+                    );
+                    
+                    Promise.all(promises)
+                        .then(() => {
+                            document.getElementById('groupSuccess').textContent = 'Gruppe oprettet!';
+                            updateGroupList();
+                            setTimeout(closeGroupModal, 2000);
+                        });
+                } else {
+                    document.getElementById('groupError').textContent = data.error;
+                }
+            })
+            .catch(error => {
+                document.getElementById('groupError').textContent = 'Der skete en fejl: ' + error;
+            });
+        }
+
+        function updateGroupSelects() {
+            fetch('/get_meter_groups')
+                .then(response => response.json())
+                .then(groups => {
+                    const selects = ['ip_group', 'mac_group'].map(id => document.getElementById(id));
+                    selects.forEach(select => {
+                        select.innerHTML = '<option value="">Vælg gruppe...</option><option value="new">Opret ny gruppe...</option>';
+                        groups.forEach(group => {
+                            const option = document.createElement('option');
+                            option.value = group.name;
+                            option.textContent = group.name;
+                            select.appendChild(option);
+                        });
+                    });
+                });
+        }
+
+        function handleGroupSelect(prefix) {
+            const select = document.getElementById(prefix + '_group');
+            const newGroupInput = document.getElementById(prefix + '_new_group');
+            
+            if (select.value === 'new') {
+                newGroupInput.style.display = 'block';
+                newGroupInput.focus();
+            } else {
+                newGroupInput.style.display = 'none';
+                newGroupInput.value = '';
+            }
+        }
+
+        async function addMeterToGroup(meterName, groupName) {
+            // Hvis gruppen ikke findes, opret den først
+            const groups = await fetch('/get_meter_groups').then(r => r.json());
+            const groupExists = groups.some(g => g.name === groupName);
+            
+            if (!groupExists) {
+                const createResult = await fetch('/create_meter_group', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `group_name=${encodeURIComponent(groupName)}`
+                }).then(r => r.json());
+                
+                if (!createResult.success) {
+                    throw new Error('Kunne ikke oprette gruppe: ' + createResult.error);
+                }
+            }
+            
+            // Tilføj måler til gruppen
+            const result = await fetch('/add_meter_to_group', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `group_name=${encodeURIComponent(groupName)}&meter_name=${encodeURIComponent(meterName)}`
+            }).then(r => r.json());
+            
+            if (!result.success) {
+                throw new Error('Kunne ikke tilføje måler til gruppe: ' + result.error);
+            }
+        }
+
+        function deleteMeter() {
+            const meterName = document.getElementById('selectedMeterName').textContent;
+            if (meterName && meterName !== 'Ingen valgt') {
+                document.getElementById('deleteModalMeterName').textContent = meterName;
+                document.getElementById('deleteModal').style.display = 'block';
+            }
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+            document.getElementById('deleteCode').value = '';
+            document.getElementById('deleteError').textContent = '';
+        }
+
+        function confirmDelete() {
+            const meterName = document.getElementById('selectedMeterName').textContent;
+            const deleteCode = document.getElementById('deleteCode').value;
+            
+            if (deleteCode !== '2012') {
+                document.getElementById('deleteError').textContent = 'Forkert sikkerhedskode';
+                return;
+            }
+            
+            fetch('/delete_meter', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `meter_name=${encodeURIComponent(meterName)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    closeDeleteModal();
+                    document.getElementById('selectedMeterName').textContent = 'Ingen valgt';
+                    document.getElementById('latestReading').textContent = '-';
+                    document.getElementById('latestTimestamp').textContent = '-';
+                    document.getElementById('deleteButton').style.display = 'none';
+                    document.getElementById('plot').innerHTML = '';
+                    updateMeterList();
+                    updateGroupList();
+                } else {
+                    document.getElementById('deleteError').textContent = 'Fejl ved sletning af måler: ' + (data.error || 'Ukendt fejl');
+                }
+            })
+            .catch(error => {
+                document.getElementById('deleteError').textContent = 'Der skete en fejl: ' + error;
+            });
+        }
+
+        // Initial load
+        updateMeterList();
+        updateGroupList();
+
+        // Update every 30 seconds
+        setInterval(() => {
+            updateMeterList();
+            updateGroupList();
+            const selectedMeter = document.getElementById('selectedMeterName').textContent;
+            if (selectedMeter && selectedMeter !== 'Ingen valgt') {
+                updatePlot(selectedMeter);
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
