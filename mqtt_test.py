@@ -39,24 +39,26 @@ pending_readings = defaultdict(list)
 BATCH_SIZE = 50
 BATCH_TIMEOUT = 5  # sekunder
 
-def get_meter_name(mac_address):
-    """Hent måler navn fra database"""
+def get_meter_info(short_mac):
+    """Hent måler information fra database"""
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor(dictionary=True)
         
-        # Prøv først med den fulde MAC adresse
-        cursor.execute('SELECT meter_name FROM meters WHERE mac_address LIKE %s LIMIT 1', (f'%{mac_address}%',))
+        # Find måler baseret på MAC adresse
+        cursor.execute('SELECT meter_name, mac_address FROM meters WHERE mac_address LIKE %s LIMIT 1', (f'%{short_mac}%',))
         result = cursor.fetchone()
         
         cursor.close()
         conn.close()
         
-        return result['meter_name'] if result else None
+        if result:
+            return result['meter_name'], result['mac_address']
+        return None, None
         
     except Exception as e:
-        logging.error(f"Database fejl i get_meter_name: {str(e)}")
-        return None
+        logging.error(f"Database fejl i get_meter_info: {str(e)}")
+        return None, None
 
 def save_readings_batch(readings):
     """Gem en batch af målinger"""
@@ -68,8 +70,8 @@ def save_readings_batch(readings):
         cursor = conn.cursor()
         
         insert_query = '''
-        INSERT INTO readings (ip_address, meter_name, total_energy, timestamp)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO readings (ip_address, meter_name, total_energy, timestamp, mac_address)
+        VALUES (%s, %s, %s, %s, %s)
         '''
         
         cursor.executemany(insert_query, readings)
@@ -105,13 +107,16 @@ def process_message_queue():
                     
                     # Tjek om det er en SENSOR besked med ENERGY data
                     if "ENERGY" in data and "Time" in data and "ConsumptionTotal" in data["ENERGY"]:
-                        # Udled meter_id fra topic (f.eks. tele/obkBFBFD7F0 -> BFBFD7F0)
-                        meter_id = topic.split('/')[1]
-                        mac_address = meter_id[3:] if meter_id.startswith('obk') else meter_id
-                        meter_name = get_meter_name(mac_address)
+                        # Udled meter_id og ip fra topic (f.eks. tele/obkBFBFD7F0/SENSOR)
+                        parts = topic.split('/')
+                        meter_id = parts[1]
+                        short_mac = meter_id[3:] if meter_id.startswith('obk') else meter_id
+                        
+                        # Hent måler navn og fuld MAC adresse fra databasen
+                        meter_name, full_mac = get_meter_info(short_mac)
                         
                         if not meter_name:
-                            logging.error(f"Ingen måler fundet med MAC adresse: {mac_address}")
+                            logging.error(f"Ingen måler fundet med MAC adresse: {short_mac}")
                             continue
                             
                         # Konverter værdien til kWh
@@ -122,8 +127,9 @@ def process_message_queue():
                         mqtt_time = datetime.strptime(data["Time"], "%Y-%m-%dT%H:%M:%S")
                         current_time = mqtt_time.strftime('%Y-%m-%d %H:%M:%S')
                         
-                        # Gem måling i pending listen med None som ip_address
-                        reading = (None, meter_name, kwh_value, current_time)
+                        # Gem måling i pending listen med ip_address og mac_address
+                        ip_address = data.get("IPAddress", None)  # Hent IP fra MQTT data hvis tilgængelig
+                        reading = (ip_address, meter_name, kwh_value, current_time, full_mac)
                         pending_readings[meter_name].append(reading)
                         
                         # Log målingen
@@ -131,6 +137,8 @@ def process_message_queue():
                         logging.info(f"Måling klar til gemning for {meter_name}:")
                         logging.info(f"  Måler tidspunkt: {current_time}")
                         logging.info(f"  Total energi: {energy_formatted} kWh")
+                        logging.info(f"  IP: {ip_address}")
+                        logging.info(f"  MAC: {full_mac}")
                         
                 except json.JSONDecodeError:
                     logging.error(f"Ugyldig JSON i besked: {payload}")
