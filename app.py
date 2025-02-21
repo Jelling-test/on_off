@@ -326,5 +326,94 @@ def delete_meter():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/toggle_power', methods=['POST'])
+def toggle_power():
+    """Tænder eller slukker for en måler.
+    Understøtter to forskellige MQTT kommandoformater:
+    1. cmnd/obkMAC/Power med tom streng for toggle
+    2. obkMAC/0/set med '0' for sluk, '1' for tænd
+    """
+    try:
+        data = request.get_json()
+        meter_name = data.get('meter_name')
+        desired_state = data.get('state')  # None/tom for toggle, '0' for sluk, '1' for tænd
+        
+        if not meter_name:
+            return jsonify({'error': 'Manglende måler navn'}), 400
+            
+        # Find målerens information i databasen
+        meter = db.get_meter_by_name(meter_name)
+        if not meter or not meter['mac_address']:
+            return jsonify({'error': 'Måler ikke fundet eller mangler MAC adresse'}), 404
+            
+        mac_address = meter['mac_address']
+        # Tag kun de sidste 8 tegn af MAC adressen
+        short_mac = mac_address[-8:]
+        
+        # MQTT setup
+        mqtt_client = mqtt.Client()
+        mqtt_client.username_pw_set("homeassistant", "password123")
+        
+        try:
+            mqtt_client.connect("192.168.9.61", 1890, 60)
+        except Exception as e:
+            return jsonify({'error': f'Kunne ikke forbinde til MQTT broker: {str(e)}'}), 500
+        
+        # Definer kommandoer for begge typer målere
+        commands = [
+            # Type 1: Ny kommandostruktur (som måler 903)
+            {
+                'topic': f"obk{short_mac}/0/set",
+                'payload': desired_state if desired_state in ['0', '1'] else '1',  # Default til tænd hvis ingen state
+                'delay': 2  # Sekunder at vente efter kommando
+            },
+            # Type 2: Gammel kommandostruktur (som måler 902)
+            {
+                'topic': f"cmnd/obk{short_mac}/Power",
+                'payload': "",  # Tom streng for at toggle
+                'delay': 0  # Ingen ventetid nødvendig
+            }
+        ]
+        
+        success = False
+        used_command = None
+        
+        # Prøv begge kommandotyper
+        for cmd in commands:
+            try:
+                logging.info(f"Sender kommando til {cmd['topic']} med payload: '{cmd['payload']}'")
+                result = mqtt_client.publish(cmd['topic'], cmd['payload'], qos=1)
+                
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    if cmd['delay'] > 0:
+                        import time
+                        time.sleep(cmd['delay'])
+                    
+                    success = True
+                    used_command = cmd
+                    logging.info(f"Kommando sendt succesfuldt til {cmd['topic']}")
+                    break
+                    
+            except Exception as e:
+                logging.error(f"Fejl ved sending til {cmd['topic']}: {str(e)}")
+                continue
+        
+        mqtt_client.disconnect()
+        
+        if not success:
+            return jsonify({'error': 'Kunne ikke sende kommando til nogen af de forsøgte kommandoformater'}), 500
+            
+        return jsonify({
+            'success': True, 
+            'meter': meter_name,
+            'mac': short_mac,
+            'topic_used': used_command['topic'],
+            'payload_used': used_command['payload']
+        })
+        
+    except Exception as e:
+        logging.error(f"Fejl i toggle_power: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

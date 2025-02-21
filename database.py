@@ -111,6 +111,18 @@ class MaalerDatabase:
         conn.close()
         return meter
 
+    def get_meter_by_name(self, meter_name):
+        """Hent måler information baseret på måler navn"""
+        conn = self._get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute('SELECT * FROM meters WHERE meter_name = %s', (meter_name,))
+        meter = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        return meter
+
     def get_all_meters(self):
         conn = self._get_connection()
         cursor = conn.cursor()

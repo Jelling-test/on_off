@@ -265,7 +265,7 @@
             <h2>Valgt Måler: <span id="selectedMeterName">Ingen valgt</span></h2>
             <div class="meter-actions">
                 <button class="button danger" onclick="deleteMeter()" id="deleteButton" style="display: none;">Slet Måler</button>
-                <button class="button" id="powerButton" style="display: none;">Tænd/Sluk</button>
+                <button class="button" id="powerButton" style="display: none;" onclick="togglePower()">Tænd/Sluk</button>
             </div>
             <p>Seneste måling: <span id="latestReading">-</span> kWh</p>
             <p>Tidspunkt: <span id="latestTimestamp">-</span></p>
@@ -769,6 +769,12 @@
         let powerState = true;  // true = tændt, false = slukket
 
         function togglePower() {
+            const meterName = document.getElementById('selectedMeterName').textContent;
+            if (!meterName || meterName === 'Ingen valgt') {
+                alert('Vælg venligst en måler først');
+                return;
+            }
+
             const button = document.getElementById('powerButton');
             powerState = !powerState;
             
@@ -777,8 +783,37 @@
             button.classList.toggle('success', powerState);
             button.classList.toggle('warning', !powerState);
             
-            // Send kommando til serveren (når vi implementerer MQTT delen)
-            console.log(`Skifter strøm ${powerState ? 'til' : 'fra'} for måler ${selectedMeterMac}`);
+            // Send kommando til serveren
+            fetch('/toggle_power', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    meter_name: meterName,
+                    state: powerState ? '1' : '0'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Fejl: ' + data.error);
+                    // Rul tilbage knappens tilstand hvis der var en fejl
+                    powerState = !powerState;
+                    button.textContent = powerState ? 'Sluk' : 'Tænd';
+                    button.classList.toggle('success', powerState);
+                    button.classList.toggle('warning', !powerState);
+                }
+            })
+            .catch(error => {
+                console.error('Fejl:', error);
+                alert('Der opstod en fejl ved kommunikation med serveren');
+                // Rul tilbage knappens tilstand
+                powerState = !powerState;
+                button.textContent = powerState ? 'Sluk' : 'Tænd';
+                button.classList.toggle('success', powerState);
+                button.classList.toggle('warning', !powerState);
+            });
         }
 
         function deleteMeter() {
