@@ -37,6 +37,28 @@
         .button.danger:hover {
             background-color: #c82333;
         }
+        .button.success {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .button.success:hover {
+            background-color: #218838;
+        }
+        .button.warning {
+            background-color: #ffc107;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .button.warning:hover {
+            background-color: #ff9900;
+        }
         .modal {
             display: none;
             position: fixed;
@@ -166,7 +188,15 @@
             border-radius: 4px;
         }
         .meter-actions {
+            display: flex;
+            gap: 10px;
             margin: 10px 0;
+        }
+        .button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
         .control-section {
             display: flex;
@@ -235,6 +265,7 @@
             <h2>Valgt Måler: <span id="selectedMeterName">Ingen valgt</span></h2>
             <div class="meter-actions">
                 <button class="button danger" onclick="deleteMeter()" id="deleteButton" style="display: none;">Slet Måler</button>
+                <button class="button" id="powerButton" style="display: none;">Tænd/Sluk</button>
             </div>
             <p>Seneste måling: <span id="latestReading">-</span> kWh</p>
             <p>Tidspunkt: <span id="latestTimestamp">-</span></p>
@@ -468,6 +499,7 @@
         function updatePlot(meterName) {
             if (!meterName) {
                 document.getElementById('deleteButton').style.display = 'none';
+                document.getElementById('powerButton').style.display = 'none';
                 document.getElementById('latestReading').textContent = '-';
                 document.getElementById('latestTimestamp').textContent = '-';
                 document.getElementById('selectedMeterName').textContent = '';
@@ -482,51 +514,49 @@
                         return;
                     }
 
-                    // Opdater måler info uanset om der er målinger eller ej
-                    document.getElementById('selectedMeterName').textContent = data.meter_name || '';
+                    // Opdater måler info
+                    document.getElementById('selectedMeterName').textContent = data.meter_name;
                     document.getElementById('deleteButton').style.display = 'block';
+                    document.getElementById('powerButton').style.display = 'block';
                     
-                    // Håndter latest readings data sikkert
-                    if (data.latest && typeof data.latest.value === 'number') {
-                        // Formater tallet med 2 decimaler og brug komma som decimal separator
-                        const formattedValue = data.latest.value.toFixed(2).replace('.', ',');
-                        document.getElementById('latestReading').textContent = formattedValue;
-                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp || '-';
+                    // Opdater seneste måling
+                    if (data.latest) {
+                        document.getElementById('latestReading').textContent = data.latest.value;
+                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp;
                     } else {
                         document.getElementById('latestReading').textContent = '-';
                         document.getElementById('latestTimestamp').textContent = '-';
                     }
 
-                    // Sikre at vi har data arrays
-                    const dates = Array.isArray(data.dates) ? data.dates : [];
-                    const values = Array.isArray(data.values) ? data.values : [];
+                    // Plot data hvis der er målinger
+                    if (data.dates && data.values && data.dates.length > 0) {
+                        const trace = {
+                            x: data.dates,
+                            y: data.values,
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Energiforbrug'
+                        };
 
-                    const trace = {
-                        x: dates,
-                        y: values,
-                        type: 'scatter',
-                        mode: 'lines'
-                    };
+                        const layout = {
+                            title: 'Energiforbrug over tid',
+                            xaxis: {
+                                title: 'Tidspunkt'
+                            },
+                            yaxis: {
+                                title: 'kWh',
+                                rangemode: 'tozero'
+                            }
+                        };
 
-                    const layout = {
-                        title: 'Energiforbrug over tid',
-                        xaxis: {
-                            title: 'Tidspunkt'
-                        },
-                        yaxis: {
-                            title: 'kWh',
-                            rangemode: 'tozero',
-                            // Formatering af y-akse værdier
-                            tickformat: ',.2f'
-                        }
-                    };
-
-                    Plotly.newPlot('plot', [trace], layout);
+                        Plotly.newPlot('plot', [trace], layout);
+                    } else {
+                        document.getElementById('plot').innerHTML = 'Ingen målinger fundet';
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('latestReading').textContent = '-';
-                    document.getElementById('latestTimestamp').textContent = '-';
+                    document.getElementById('plot').innerHTML = 'Fejl ved hentning af data';
                 });
         }
 
@@ -735,6 +765,22 @@
             }
         }
 
+        let selectedMeterMac = null;
+        let powerState = true;  // true = tændt, false = slukket
+
+        function togglePower() {
+            const button = document.getElementById('powerButton');
+            powerState = !powerState;
+            
+            // Opdater knappens tekst baseret på den nye tilstand
+            button.textContent = powerState ? 'Sluk' : 'Tænd';
+            button.classList.toggle('success', powerState);
+            button.classList.toggle('warning', !powerState);
+            
+            // Send kommando til serveren (når vi implementerer MQTT delen)
+            console.log(`Skifter strøm ${powerState ? 'til' : 'fra'} for måler ${selectedMeterMac}`);
+        }
+
         function deleteMeter() {
             const meterName = document.getElementById('selectedMeterName').textContent;
             if (meterName && meterName !== 'Ingen valgt') {
@@ -751,19 +797,13 @@
 
         function confirmDelete() {
             const meterName = document.getElementById('selectedMeterName').textContent;
-            const deleteCode = document.getElementById('deleteCode').value;
-            
-            if (deleteCode !== '2012') {
-                document.getElementById('deleteError').textContent = 'Forkert sikkerhedskode';
-                return;
-            }
             
             fetch('/delete_meter', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `meter_name=${encodeURIComponent(meterName)}`
+                body: 'meter_name=' + encodeURIComponent(meterName)
             })
             .then(response => response.json())
             .then(data => {
@@ -773,6 +813,7 @@
                     document.getElementById('latestReading').textContent = '-';
                     document.getElementById('latestTimestamp').textContent = '-';
                     document.getElementById('deleteButton').style.display = 'none';
+                    document.getElementById('powerButton').style.display = 'none'; // Opdateret her
                     document.getElementById('plot').innerHTML = '';
                     updateMeterList();
                     updateGroupList();
