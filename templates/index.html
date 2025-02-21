@@ -488,7 +488,9 @@
                     
                     // Håndter latest readings data sikkert
                     if (data.latest && typeof data.latest.value === 'number') {
-                        document.getElementById('latestReading').textContent = data.latest.value.toFixed(2).replace('.', ',');
+                        // Formater tallet med 2 decimaler og brug komma som decimal separator
+                        const formattedValue = data.latest.value.toFixed(2).replace('.', ',');
+                        document.getElementById('latestReading').textContent = formattedValue;
                         document.getElementById('latestTimestamp').textContent = data.latest.timestamp || '-';
                     } else {
                         document.getElementById('latestReading').textContent = '-';
@@ -513,7 +515,9 @@
                         },
                         yaxis: {
                             title: 'kWh',
-                            rangemode: 'tozero'
+                            rangemode: 'tozero',
+                            // Formatering af y-akse værdier
+                            tickformat: ',.2f'
                         }
                     };
 

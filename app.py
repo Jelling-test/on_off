@@ -129,14 +129,16 @@ def get_readings():
         })
     
     dates = [r[0] for r in readings]
-    values = [r[1] for r in readings]
+    # Konverter Wh til kWh ved at dividere med 1000
+    values = [round(float(r[1]) / 1000, 2) for r in readings]
     
     # Formater latest data korrekt med value og timestamp felter
     latest = None
     if latest_reading and len(latest_reading) >= 2:
         latest = {
             'timestamp': latest_reading[0].strftime('%Y-%m-%d %H:%M:%S') if latest_reading[0] else None,
-            'value': float(latest_reading[1]) if latest_reading[1] is not None else None
+            # Konverter Wh til kWh og formater med 2 decimaler
+            'value': round(float(latest_reading[1]) / 1000, 2) if latest_reading[1] is not None else None
         }
     
     return jsonify({
