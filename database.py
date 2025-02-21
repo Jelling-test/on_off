@@ -1,15 +1,16 @@
 import mysql.connector
 from datetime import datetime, timedelta
 import logging
+import os
 
 class MaalerDatabase:
     def __init__(self):
         self.db_config = {
-            'host': '192.168.9.61',
-            'port': 3306,
-            'user': 'homeassistant',
-            'password': 'da7vu.so-2TEi67U81',
-            'database': 'maaler_laes'
+            'host': os.environ.get('DB_HOST', '192.168.9.61'),
+            'port': int(os.environ.get('DB_PORT', 3306)),
+            'user': os.environ.get('DB_USER', 'homeassistant'),
+            'password': os.environ.get('DB_PASSWORD', 'da7vu.so-2TEi67U81'),
+            'database': os.environ.get('DB_NAME', 'maaler_laes')
         }
         self._init_db()
         
@@ -313,3 +314,26 @@ class MaalerDatabase:
         except Exception as e:
             logging.error(f"Fejl ved hentning af målergrupper: {str(e)}")
             return []
+
+    def delete_meter(self, meter_name):
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Slet først alle gruppe-relationer
+            cursor.execute('''
+            DELETE gm FROM meter_group_members gm
+            INNER JOIN meters m ON gm.meter_id = m.id
+            WHERE m.meter_name = %s
+            ''', (meter_name,))
+            
+            # Derefter slet måleren
+            cursor.execute('DELETE FROM meters WHERE meter_name = %s', (meter_name,))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"Fejl ved sletning af måler: {str(e)}")
+            return False

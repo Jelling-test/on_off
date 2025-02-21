@@ -200,7 +200,7 @@ def graph_data(meter_name):
     latest_energy = energy[-1] if energy else 0
     
     if latest_reading_time != "Ingen data":
-        latest_reading_time = datetime.strptime(latest_reading_time, '%Y-%m-%d %H:%M:%S').strftime('%d-%m-%Y %H:%M:%S')
+        latest_reading_time = latest_reading_time.strftime('%d-%m-%Y %H:%M:%S')
     
     # Formater energi med komma og 2 decimaler
     energy_formatted = format(round(latest_energy, 2), '.2f').replace('.', ',')
@@ -253,68 +253,57 @@ def graph_data(meter_name):
 
 @app.route('/overview')
 def overview():
-    days = int(request.args.get('days', 180))
-    meters = db.search_meters()
-    
-    fig = go.Figure()
-    
-    for meter in meters:
-        readings = db.get_readings(meter, days)
-        if readings:
-            dates = [r[0] for r in readings]
-            energy = [r[1] for r in readings]
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=energy,
-                mode='lines',
-                line=dict(
-                    color='rgb(49,130,189)',
-                    width=2
-                ),
-                name=meter
-            ))
-    
-    fig.update_layout(
-        title='Samlet Energiforbrug - Alle Målere',
-        xaxis_title='Dato',
-        yaxis_title='Total Energi (kWh)',
-        width=1123,
-        height=794,
-        margin=dict(l=50, r=50, t=100, b=50),
-        paper_bgcolor='white',
-        plot_bgcolor='white',
-        showlegend=True,
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='lightgray',
-            gridwidth=1
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor='lightgray',
-            gridwidth=1,
-            rangemode='nonnegative',  # Forhindrer negative værdier
-            range=[0, None]  # Start ved 0, automatisk maksimum
-        )
-    )
-    
-    return json.dumps(fig.to_dict())
+    try:
+        # Hent alle målere
+        meters = db.get_all_meters()
+        meter_data = []
+        
+        for ip, name, mac in meters:
+            # Hent seneste måling for hver måler
+            latest = db.get_latest_reading(name)
+            if latest:
+                timestamp, value = latest
+                meter_data.append({
+                    'name': name,
+                    'latest_reading': value,
+                    'timestamp': timestamp.strftime('%Y-%m-%d %H:%M:%S') if timestamp else None
+                })
+        
+        # Sorter efter seneste måling (højeste værdi først)
+        meter_data.sort(key=lambda x: x['latest_reading'] if x['latest_reading'] is not None else 0, reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'meters': meter_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 @app.route('/get_total_consumption')
 def get_total_consumption():
     try:
+        # Hent alle målere
         meters = db.get_all_meters()
         total = 0
         
-        for _, meter_name, _ in meters:
-            readings = db.get_readings(meter_name, limit=1)  # Hent kun seneste måling
-            if readings and len(readings) > 0:
-                total += readings[0][1]  # Læg seneste måling til totalen
+        for ip, name, mac in meters:
+            # Hent seneste måling for hver måler
+            latest = db.get_latest_reading(name)
+            if latest and latest[1] is not None:
+                total += latest[1]
         
-        return jsonify({'total': total})
+        return jsonify({
+            'success': True,
+            'total': total
+        })
     except Exception as e:
-        logging.error(f"Fejl ved beregning af total forbrug: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 @app.route('/delete_meter', methods=['POST'])
 def delete_meter():

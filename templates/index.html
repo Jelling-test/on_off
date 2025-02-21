@@ -37,27 +37,13 @@
         .button.danger:hover {
             background-color: #c82333;
         }
-        .button.success {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            margin-left: 10px;
-        }
-        .button.success:hover {
-            background-color: #218838;
-        }
         .button.warning {
-            background-color: #ffc107;
+            background-color: #ff9800;
             color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            margin-left: 10px;
         }
-        .button.warning:hover {
-            background-color: #ff9900;
+        .button.success {
+            background-color: #8bc34a;
+            color: white;
         }
         .modal {
             display: none;
@@ -188,15 +174,7 @@
             border-radius: 4px;
         }
         .meter-actions {
-            display: flex;
-            gap: 10px;
             margin: 10px 0;
-        }
-        .button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
         }
         .control-section {
             display: flex;
@@ -374,6 +352,9 @@
     </div>
 
     <script>
+        let selectedMeterMac = null;
+        let powerState = true;  // true = tændt, false = slukket
+
         function openTab(evt, tabName) {
             var i, tabcontent, tablinks;
             tabcontent = document.getElementsByClassName("tabcontent");
@@ -514,49 +495,52 @@
                         return;
                     }
 
-                    // Opdater måler info
-                    document.getElementById('selectedMeterName').textContent = data.meter_name;
+                    // Opdater måler info uanset om der er målinger eller ej
+                    document.getElementById('selectedMeterName').textContent = data.meter_name || '';
                     document.getElementById('deleteButton').style.display = 'block';
                     document.getElementById('powerButton').style.display = 'block';
                     
-                    // Opdater seneste måling
-                    if (data.latest) {
-                        document.getElementById('latestReading').textContent = data.latest.value;
-                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp;
+                    // Håndter latest readings data sikkert
+                    if (data.latest && typeof data.latest.value === 'number') {
+                        // Formater tallet med 2 decimaler og brug komma som decimal separator
+                        const formattedValue = data.latest.value.toFixed(2).replace('.', ',');
+                        document.getElementById('latestReading').textContent = formattedValue;
+                        document.getElementById('latestTimestamp').textContent = data.latest.timestamp || '-';
                     } else {
                         document.getElementById('latestReading').textContent = '-';
                         document.getElementById('latestTimestamp').textContent = '-';
                     }
 
-                    // Plot data hvis der er målinger
-                    if (data.dates && data.values && data.dates.length > 0) {
-                        const trace = {
-                            x: data.dates,
-                            y: data.values,
-                            type: 'scatter',
-                            mode: 'lines',
-                            name: 'Energiforbrug'
-                        };
+                    // Sikre at vi har data arrays
+                    const dates = Array.isArray(data.dates) ? data.dates : [];
+                    const values = Array.isArray(data.values) ? data.values : [];
 
-                        const layout = {
-                            title: 'Energiforbrug over tid',
-                            xaxis: {
-                                title: 'Tidspunkt'
-                            },
-                            yaxis: {
-                                title: 'kWh',
-                                rangemode: 'tozero'
-                            }
-                        };
+                    const trace = {
+                        x: dates,
+                        y: values,
+                        type: 'scatter',
+                        mode: 'lines'
+                    };
 
-                        Plotly.newPlot('plot', [trace], layout);
-                    } else {
-                        document.getElementById('plot').innerHTML = 'Ingen målinger fundet';
-                    }
+                    const layout = {
+                        title: 'Energiforbrug over tid',
+                        xaxis: {
+                            title: 'Tidspunkt'
+                        },
+                        yaxis: {
+                            title: 'kWh',
+                            rangemode: 'tozero',
+                            // Formatering af y-akse værdier
+                            tickformat: ',.2f'
+                        }
+                    };
+
+                    Plotly.newPlot('plot', [trace], layout);
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('plot').innerHTML = 'Fejl ved hentning af data';
+                    document.getElementById('latestReading').textContent = '-';
+                    document.getElementById('latestTimestamp').textContent = '-';
                 });
         }
 
@@ -765,8 +749,56 @@
             }
         }
 
-        let selectedMeterMac = null;
-        let powerState = true;  // true = tændt, false = slukket
+        function deleteMeter() {
+            const meterName = document.getElementById('selectedMeterName').textContent;
+            if (meterName && meterName !== 'Ingen valgt') {
+                document.getElementById('deleteModalMeterName').textContent = meterName;
+                document.getElementById('deleteModal').style.display = 'block';
+            }
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+            document.getElementById('deleteCode').value = '';
+            document.getElementById('deleteError').textContent = '';
+        }
+
+        function confirmDelete() {
+            const meterName = document.getElementById('selectedMeterName').textContent;
+            const deleteCode = document.getElementById('deleteCode').value;
+            
+            if (deleteCode !== '2012') {
+                document.getElementById('deleteError').textContent = 'Forkert sikkerhedskode';
+                return;
+            }
+            
+            fetch('/delete_meter', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `meter_name=${encodeURIComponent(meterName)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    closeDeleteModal();
+                    document.getElementById('selectedMeterName').textContent = 'Ingen valgt';
+                    document.getElementById('latestReading').textContent = '-';
+                    document.getElementById('latestTimestamp').textContent = '-';
+                    document.getElementById('deleteButton').style.display = 'none';
+                    document.getElementById('powerButton').style.display = 'none';
+                    document.getElementById('plot').innerHTML = '';
+                    updateMeterList();
+                    updateGroupList();
+                } else {
+                    document.getElementById('deleteError').textContent = 'Fejl ved sletning af måler: ' + (data.error || 'Ukendt fejl');
+                }
+            })
+            .catch(error => {
+                document.getElementById('deleteError').textContent = 'Der skete en fejl: ' + error;
+            });
+        }
 
         function togglePower() {
             const meterName = document.getElementById('selectedMeterName').textContent;
@@ -813,51 +845,6 @@
                 button.textContent = powerState ? 'Sluk' : 'Tænd';
                 button.classList.toggle('success', powerState);
                 button.classList.toggle('warning', !powerState);
-            });
-        }
-
-        function deleteMeter() {
-            const meterName = document.getElementById('selectedMeterName').textContent;
-            if (meterName && meterName !== 'Ingen valgt') {
-                document.getElementById('deleteModalMeterName').textContent = meterName;
-                document.getElementById('deleteModal').style.display = 'block';
-            }
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-            document.getElementById('deleteCode').value = '';
-            document.getElementById('deleteError').textContent = '';
-        }
-
-        function confirmDelete() {
-            const meterName = document.getElementById('selectedMeterName').textContent;
-            
-            fetch('/delete_meter', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'meter_name=' + encodeURIComponent(meterName)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    closeDeleteModal();
-                    document.getElementById('selectedMeterName').textContent = 'Ingen valgt';
-                    document.getElementById('latestReading').textContent = '-';
-                    document.getElementById('latestTimestamp').textContent = '-';
-                    document.getElementById('deleteButton').style.display = 'none';
-                    document.getElementById('powerButton').style.display = 'none'; // Opdateret her
-                    document.getElementById('plot').innerHTML = '';
-                    updateMeterList();
-                    updateGroupList();
-                } else {
-                    document.getElementById('deleteError').textContent = 'Fejl ved sletning af måler: ' + (data.error || 'Ukendt fejl');
-                }
-            })
-            .catch(error => {
-                document.getElementById('deleteError').textContent = 'Der skete en fejl: ' + error;
             });
         }
 
